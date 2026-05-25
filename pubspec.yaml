@@ -1,20 +1,19 @@
-name: careerkit_mobile_dashboard
-description: A simple single-screen Flutter app for Project Part 1.
-publish_to: "none"
-
+name: careerkit_mobile
 version: 1.0.0+1
+publish_to: none
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: '>=3.3.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0
+  flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true
