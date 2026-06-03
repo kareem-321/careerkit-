@@ -1,6 +1,15 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+
+// For deployed backend:
+const String apiBaseUrl = 'https://careerkit-api-production.up.railway.app/api';
 
 void main() {
+  // Ensure system UI is configured correctly
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const CareerKitApp());
 }
 
@@ -13,296 +22,198 @@ class CareerKitApp extends StatelessWidget {
       title: 'CareerKit',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF256B5F)),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF256B5F),
+          brightness: Brightness.light,
+        ),
         useMaterial3: true,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+        appBarTheme: const AppBarTheme(
+          centerTitle: true,
+          elevation: 0,
+          scrolledUnderElevation: 2,
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          height: 70, // Slightly taller for better hit testing
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(56), // Standard touch target height
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
       ),
-      home: const CareerKitDashboardPage(),
+      home: const CareerKitHomePage(),
     );
   }
 }
 
-enum CareerRole {
-  internship('Internship'),
-  juniorDeveloper('Junior Developer'),
-  general('General');
-
-  const CareerRole(this.label);
-
-  final String label;
-}
-
-class CvCheckResult {
-  const CvCheckResult({
-    required this.score,
-    required this.message,
+class CareerProfile {
+  CareerProfile({
+    this.id,
+    required this.fullName,
+    required this.targetRole,
+    required this.skillsCount,
+    required this.projectsCount,
+    required this.hasContact,
+    required this.hasEducation,
+    required this.hasSkillsSection,
+    required this.hasProjectsSection,
+    this.readinessScore = 0,
+    this.feedback = '',
   });
 
-  final int score;
-  final String message;
-}
+  final int? id;
+  final String fullName;
+  final String targetRole;
+  final int skillsCount;
+  final int projectsCount;
+  final bool hasContact;
+  final bool hasEducation;
+  final bool hasSkillsSection;
+  final bool hasProjectsSection;
+  final int readinessScore;
+  final String feedback;
 
-class CareerKitDashboardPage extends StatefulWidget {
-  const CareerKitDashboardPage({super.key});
+  factory CareerProfile.fromJson(Map<String, dynamic> json) {
+    bool asBool(dynamic value) => value == true || value == 1 || value == '1';
+    int asInt(dynamic value) => int.tryParse(value.toString()) ?? 0;
 
-  @override
-  State<CareerKitDashboardPage> createState() => _CareerKitDashboardPageState();
-}
-
-class _CareerKitDashboardPageState extends State<CareerKitDashboardPage> {
-  final TextEditingController skillsController = TextEditingController();
-  final TextEditingController projectsController = TextEditingController();
-
-  CareerRole selectedRole = CareerRole.internship;
-
-  bool hasContactInfo = false;
-  bool hasEducation = false;
-  bool hasSkillsSection = false;
-  bool hasProjectsSection = false;
-
-  CvCheckResult result = const CvCheckResult(score: 0, message: '');
-
-  @override
-  void dispose() {
-    skillsController.dispose();
-    projectsController.dispose();
-    super.dispose();
+    return CareerProfile(
+      id: asInt(json['id']),
+      fullName: json['full_name']?.toString() ?? '',
+      targetRole: json['target_role']?.toString() ?? 'General',
+      skillsCount: asInt(json['skills_count']),
+      projectsCount: asInt(json['projects_count']),
+      hasContact: asBool(json['has_contact']),
+      hasEducation: asBool(json['has_education']),
+      hasSkillsSection: asBool(json['has_skills_section']),
+      hasProjectsSection: asBool(json['has_projects_section']),
+      readinessScore: asInt(json['readiness_score']),
+      feedback: json['feedback']?.toString() ?? '',
+    );
   }
 
-  void checkCv() {
-    final skills = int.tryParse(skillsController.text) ?? 0;
-    final projects = int.tryParse(projectsController.text) ?? 0;
-
-    int newScore = 0;
-    if (hasContactInfo) newScore += 20;
-    if (hasEducation) newScore += 20;
-    if (hasSkillsSection) newScore += 20;
-    if (hasProjectsSection) newScore += 20;
-    if (skills >= 3) newScore += 10;
-    if (projects >= 1) newScore += 10;
-
-    final message = switch (newScore) {
-      >= 80 => 'Your CV looks ready.',
-      >= 50 => 'Your CV is okay but needs some improvement.',
-      _ => 'Your CV needs improvement.',
+  Map<String, dynamic> toJson() {
+    return {
+      'full_name': fullName,
+      'target_role': targetRole,
+      'skills_count': skillsCount,
+      'projects_count': projectsCount,
+      'has_contact': hasContact,
+      'has_education': hasEducation,
+      'has_skills_section': hasSkillsSection,
+      'has_projects_section': hasProjectsSection,
     };
-
-    setState(() {
-      result = CvCheckResult(score: newScore, message: message);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('CareerKit Mobile Dashboard'),
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final maxWidth = constraints.maxWidth > 720 ? 720.0 : double.infinity;
-
-          return Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxWidth),
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  const _SectionTitle('Target Role'),
-                  _RoleDropdown(
-                    selectedRole: selectedRole,
-                    onSelected: (role) {
-                      setState(() {
-                        selectedRole = role;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  _NumberInput(
-                    key: const ValueKey('skillsField'),
-                    controller: skillsController,
-                    label: 'Number of skills',
-                  ),
-                  const SizedBox(height: 12),
-                  _NumberInput(
-                    key: const ValueKey('projectsField'),
-                    controller: projectsController,
-                    label: 'Number of projects',
-                  ),
-                  const SizedBox(height: 16),
-                  _ChecklistTile(
-                    key: const ValueKey('contactCheckbox'),
-                    title: 'Contact information included',
-                    value: hasContactInfo,
-                    onChanged: (value) {
-                      setState(() {
-                        hasContactInfo = value;
-                      });
-                    },
-                  ),
-                  _ChecklistTile(
-                    key: const ValueKey('educationCheckbox'),
-                    title: 'Education section included',
-                    value: hasEducation,
-                    onChanged: (value) {
-                      setState(() {
-                        hasEducation = value;
-                      });
-                    },
-                  ),
-                  _ChecklistTile(
-                    key: const ValueKey('skillsCheckbox'),
-                    title: 'Skills section included',
-                    value: hasSkillsSection,
-                    onChanged: (value) {
-                      setState(() {
-                        hasSkillsSection = value;
-                      });
-                    },
-                  ),
-                  _ChecklistTile(
-                    key: const ValueKey('projectsCheckbox'),
-                    title: 'Projects section included',
-                    value: hasProjectsSection,
-                    onChanged: (value) {
-                      setState(() {
-                        hasProjectsSection = value;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    key: const ValueKey('checkCvButton'),
-                    onPressed: checkCv,
-                    child: const Text('Check CV'),
-                  ),
-                  const SizedBox(height: 20),
-                  _ResultCard(
-                    key: const ValueKey('resultCard'),
-                    role: selectedRole.label,
-                    result: result,
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
   }
 }
 
-class _RoleDropdown extends StatelessWidget {
-  const _RoleDropdown({
-    required this.selectedRole,
-    required this.onSelected,
-  });
+class CareerKitApi {
+  Future<List<CareerProfile>> getProfiles() async {
+    final response = await http
+        .get(Uri.parse('$apiBaseUrl/profiles'))
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+    final List<dynamic> data = jsonDecode(response.body);
+    return data.map((item) => CareerProfile.fromJson(item)).toList();
+  }
 
-  final CareerRole selectedRole;
-  final ValueChanged<CareerRole> onSelected;
+  Future<CareerProfile> createProfile(CareerProfile profile) async {
+    final response = await http
+        .post(
+          Uri.parse('$apiBaseUrl/profiles'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(profile.toJson()),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 201) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+    return CareerProfile.fromJson(jsonDecode(response.body));
+  }
+
+  Future<void> deleteProfile(int id) async {
+    final response = await http
+        .delete(Uri.parse('$apiBaseUrl/profiles/$id'))
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+  }
+}
+
+class CareerKitHomePage extends StatefulWidget {
+  const CareerKitHomePage({super.key});
+
+  @override
+  State<CareerKitHomePage> createState() => _CareerKitHomePageState();
+}
+
+class _CareerKitHomePageState extends State<CareerKitHomePage> {
+  int _selectedIndex = 0;
+  final _api = CareerKitApi();
+  final _profilesKey = GlobalKey<_ProfilesViewState>();
+
+  void _onSaveSuccess() {
+    setState(() => _selectedIndex = 1);
+    _profilesKey.currentState?.refresh();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return DropdownMenu<CareerRole>(
-          initialSelection: selectedRole,
-          width: constraints.maxWidth,
-          onSelected: (role) {
-            if (role != null) {
-              onSelected(role);
-            }
-          },
-          dropdownMenuEntries: [
-            for (final role in CareerRole.values)
-              DropdownMenuEntry(value: role, label: role.label),
-          ],
-        );
+    // PopScope handles the back button at the root of the app
+    return PopScope(
+      canPop: _selectedIndex == 0, // Allow pop only if on the first tab
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return; // If it was allowed to pop, do nothing
+        // Otherwise, switch back to the first tab (Dashboard)
+        setState(() => _selectedIndex = 0);
       },
-    );
-  }
-}
-
-class _NumberInput extends StatelessWidget {
-  const _NumberInput({
-    super.key,
-    required this.controller,
-    required this.label,
-  });
-
-  final TextEditingController controller;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
-    );
-  }
-}
-
-class _ChecklistTile extends StatelessWidget {
-  const _ChecklistTile({
-    super.key,
-    required this.title,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String title;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return CheckboxListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(title),
-      value: value,
-      onChanged: (value) {
-        onChanged(value ?? false);
-      },
-    );
-  }
-}
-
-class _ResultCard extends StatelessWidget {
-  const _ResultCard({
-    super.key,
-    required this.role,
-    required this.result,
-  });
-
-  final String role;
-  final CvCheckResult result;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Role: $role',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Score: ${result.score} / 100',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            if (result.message.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(result.message),
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_selectedIndex == 0 ? 'CareerKit Dashboard' : 'Saved Profiles'),
+          actions: _selectedIndex == 1
+              ? [
+                  IconButton(
+                    onPressed: () {
+                      HapticFeedback.mediumImpact();
+                      _profilesKey.currentState?.refresh();
+                    },
+                    icon: const Icon(Icons.refresh),
+                  )
+                ]
+              : null,
+        ),
+        body: SafeArea(
+          bottom: false, // NavigationBar handles the bottom padding
+          child: IndexedStack(
+            index: _selectedIndex,
+            children: [
+              DashboardView(api: _api, onSaveSuccess: _onSaveSuccess),
+              ProfilesView(key: _profilesKey, api: _api),
             ],
+          ),
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (index) {
+            HapticFeedback.selectionClick();
+            setState(() => _selectedIndex = index);
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.dashboard_outlined),
+              selectedIcon: Icon(Icons.dashboard),
+              label: 'Dashboard',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.list_alt_outlined),
+              selectedIcon: Icon(Icons.list_alt),
+              label: 'Profiles',
+            ),
           ],
         ),
       ),
@@ -310,18 +221,303 @@ class _ResultCard extends StatelessWidget {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+class DashboardView extends StatefulWidget {
+  const DashboardView({super.key, required this.api, required this.onSaveSuccess});
+  final CareerKitApi api;
+  final VoidCallback onSaveSuccess;
 
-  final String text;
+  @override
+  State<DashboardView> createState() => _DashboardViewState();
+}
+
+class _DashboardViewState extends State<DashboardView> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _skillsController = TextEditingController(text: '0');
+  final _projectsController = TextEditingController(text: '0');
+
+  String _selectedRole = 'Internship';
+  bool _hasContact = false;
+  bool _hasEducation = false;
+  bool _hasSkillsSection = false;
+  bool _hasProjectsSection = false;
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _skillsController.dispose();
+    _projectsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveProfile() async {
+    if (!_formKey.currentState!.validate()) {
+      HapticFeedback.vibrate();
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    HapticFeedback.lightImpact();
+
+    setState(() => _isSaving = true);
+    try {
+      final profile = CareerProfile(
+        fullName: _nameController.text.trim(),
+        targetRole: _selectedRole,
+        skillsCount: int.tryParse(_skillsController.text) ?? 0,
+        projectsCount: int.tryParse(_projectsController.text) ?? 0,
+        hasContact: _hasContact,
+        hasEducation: _hasEducation,
+        hasSkillsSection: _hasSkillsSection,
+        hasProjectsSection: _hasProjectsSection,
+      );
+      await widget.api.createProfile(profile);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile saved successfully!'), behavior: SnackBarBehavior.floating),
+      );
+      widget.onSaveSuccess();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 600),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            children: [
+              Text(
+                'New Profile',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+              ),
+              const SizedBox(height: 24),
+              TextFormField(
+                controller: _nameController,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Full Name',
+                  prefixIcon: Icon(Icons.person_outline),
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) => (v == null || v.isEmpty) ? 'Name is required' : null,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedRole,
+                decoration: const InputDecoration(
+                  labelText: 'Target Role',
+                  prefixIcon: Icon(Icons.work_outline),
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'Internship', child: Text('Internship')),
+                  DropdownMenuItem(value: 'Junior Developer', child: Text('Junior Developer')),
+                  DropdownMenuItem(value: 'General', child: Text('General')),
+                ],
+                onChanged: (v) => setState(() => _selectedRole = v!),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _skillsController,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Skills',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _projectsController,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      decoration: const InputDecoration(
+                        labelText: 'Projects',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                title: const Text('Contact Details'),
+                value: _hasContact,
+                onChanged: (v) => setState(() => _hasContact = v),
+              ),
+              SwitchListTile(
+                title: const Text('Education Hist.'),
+                value: _hasEducation,
+                onChanged: (v) => setState(() => _hasEducation = v),
+              ),
+              SwitchListTile(
+                title: const Text('Skills List'),
+                value: _hasSkillsSection,
+                onChanged: (v) => setState(() => _hasSkillsSection = v),
+              ),
+              SwitchListTile(
+                title: const Text('Project List'),
+                value: _hasProjectsSection,
+                onChanged: (v) => setState(() => _hasProjectsSection = v),
+              ),
+              const SizedBox(height: 32),
+              FilledButton.icon(
+                onPressed: _isSaving ? null : _saveProfile,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.cloud_done_outlined),
+                label: Text(_isSaving ? 'Saving...' : 'Verify & Save'),
+              ),
+              const SizedBox(height: 40),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class ProfilesView extends StatefulWidget {
+  const ProfilesView({super.key, required this.api});
+  final CareerKitApi api;
+
+  @override
+  State<ProfilesView> createState() => _ProfilesViewState();
+}
+
+class _ProfilesViewState extends State<ProfilesView> {
+  late Future<List<CareerProfile>> _profilesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    refresh();
+  }
+
+  void refresh() {
+    setState(() {
+      _profilesFuture = widget.api.getProfiles();
+    });
+  }
+
+  Future<void> _delete(int id) async {
+    HapticFeedback.heavyImpact();
+    try {
+      await widget.api.deleteProfile(id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile deleted'), behavior: SnackBarBehavior.floating),
+      );
+      refresh();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Delete failed: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<CareerProfile>>(
+      future: _profilesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.cloud_off, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  Text('Connection Issue', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  Text(snapshot.error.toString(), textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: refresh,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Try Again'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        final profiles = snapshot.data ?? [];
+        if (profiles.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.list_alt, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text('No profiles found', style: TextStyle(color: Colors.grey, fontSize: 18)),
+                const SizedBox(height: 8),
+                TextButton(onPressed: refresh, child: const Text('Refresh List')),
+              ],
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: profiles.length,
+          itemBuilder: (context, index) {
+            final p = profiles[index];
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                side: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.1)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                title: Text(p.fullName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('${p.targetRole} • Readiness: ${p.readinessScore}%\n${p.feedback}'),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  onPressed: () => _delete(p.id!),
+                ),
+                isThreeLine: true,
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
